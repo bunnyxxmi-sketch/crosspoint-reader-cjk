@@ -2,6 +2,7 @@
 
 #include <Epub/Page.h>
 #include <Epub/blocks/TextBlock.h>
+#include <FontManager.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
@@ -569,16 +570,22 @@ void EpubReaderActivity::render(Activity::RenderLock&& lock) {
 
     if (!section->loadSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
                                   SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, viewportWidth,
-                                  viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle)) {
+                                  viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.firstLineIndent,
+                                  SETTINGS.embeddedStyle)) {
       LOG_DBG("ERS", "Cache not found, building...");
 
       const auto popupFn = [this]() { GUI.drawPopup(renderer, tr(STR_INDEXING)); };
 
       if (!section->createSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
                                       SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, viewportWidth,
-                                      viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle, popupFn)) {
+                                      viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.firstLineIndent,
+                                      SETTINGS.embeddedStyle, popupFn)) {
         LOG_ERR("ERS", "Failed to persist page data to SD");
         section.reset();
+        // Show error to user instead of silent return
+        renderer.clearScreen();
+        renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_MEMORY_ERROR), true, EpdFontFamily::BOLD);
+        renderer.displayBuffer();
         return;
       }
     } else {
@@ -674,6 +681,20 @@ void EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
 void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int orientedMarginTop,
                                         const int orientedMarginRight, const int orientedMarginBottom,
                                         const int orientedMarginLeft) {
+  // Preload external font glyphs: collect codepoints from page, sort them,
+  // and batch-read from SD sequentially. Much faster than random reads during render.
+  FontManager& fm = FontManager::getInstance();
+  if (fm.isExternalFontEnabled()) {
+    ExternalFont* extFont = fm.getActiveFont();
+    if (extFont) {
+      std::vector<uint32_t> codepoints;
+      page->collectCodepoints(codepoints, extFont->getCacheCapacity());
+      if (!codepoints.empty()) {
+        extFont->preloadGlyphs(codepoints.data(), codepoints.size());
+      }
+    }
+  }
+
   // Force special handling for pages with images when anti-aliasing is on
   bool imagePageWithAA = page->hasImages() && SETTINGS.textAntiAliasing;
 
@@ -709,9 +730,9 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   // Save bw buffer to reset buffer state after grayscale data sync
   renderer.storeBwBuffer();
 
-  // grayscale rendering
-  // TODO: Only do this if font supports it
-  if (SETTINGS.textAntiAliasing) {
+  // Grayscale rendering - skip for external fonts (1-bit bitmap, no antialiasing benefit)
+  const bool useExternalFont = FontManager::getInstance().isExternalFontEnabled();
+  if (SETTINGS.textAntiAliasing && !useExternalFont) {
     renderer.clearScreen(0x00);
     renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
     page->render(renderer, SETTINGS.getReaderFontId(), orientedMarginLeft, orientedMarginTop);
