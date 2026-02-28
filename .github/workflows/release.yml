@@ -27,8 +27,16 @@ jobs:
       - name: Install PlatformIO Core
         run: uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
 
-      - name: Build CrossPoint
+      - name: Build CrossPoint (Simplified Chinese)
         run: pio run -e gh_release
+
+      - name: Build CrossPoint (Traditional Chinese)
+        run: pio run -e gh_release_tc
+
+      - name: Rename firmware files
+        run: |
+          cp .pio/build/gh_release/firmware.bin firmware-sc.bin
+          cp .pio/build/gh_release_tc/firmware.bin firmware-tc.bin
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -36,27 +44,35 @@ jobs:
           name: CrossPoint-${{ github.ref_name }}
           path: |
             .pio/build/gh_release/bootloader.bin
-            .pio/build/gh_release/firmware.bin
-            .pio/build/gh_release/firmware.elf
-            .pio/build/gh_release/firmware.map
             .pio/build/gh_release/partitions.bin
+            firmware-sc.bin
+            firmware-tc.bin
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: CrossPoint Reader CJK ${{ github.ref_name }}
-          files: .pio/build/gh_release/firmware.bin
+          files: |
+            firmware-sc.bin
+            firmware-tc.bin
           body: |
             ## CrossPoint Reader CJK ${{ github.ref_name }}
 
             基于 [CrossPoint Reader](https://github.com/daveallie/crosspoint-reader) 的 CJK 适配版本。
+
+            ### 📦 固件版本
+
+            | 文件 | 语言 |
+            |------|------|
+            | `firmware-sc.bin` | 简体中文 / 日本語 / English |
+            | `firmware-tc.bin` | 繁體中文 / 日本語 / English |
 
             ### 📥 安装方式
 
             1. 使用 USB-C 连接设备到电脑
             2. 访问 https://xteink-flasher-cjk.vercel.app/ 点击 **"Flash CrossPoint CJK firmware"** 一键刷入
 
-            > 也可下载下方 \`firmware.bin\` 后使用 "Flash firmware from file" 手动刷入
+            > 也可下载下方固件文件后使用 "Flash firmware from file" 手动刷入
 
             ### 📝 详细说明
 
