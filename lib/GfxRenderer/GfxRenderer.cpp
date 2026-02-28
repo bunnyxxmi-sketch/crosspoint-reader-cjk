@@ -922,10 +922,67 @@ void GfxRenderer::drawImage(const uint8_t bitmap[], const int x, const int y, co
   }
   // TODO: Rotate bits
   display.drawImage(bitmap, rotatedX, rotatedY, width, height);
+
+  // In dark mode, invert the drawn region so icons adapt to dark background.
+  // drawImage bypasses drawPixel (raw memcpy), so we invert the bytes post-hoc.
+  if (darkMode && renderMode == BW) {
+    const int widthBytes = width / 8;
+    for (int row = 0; row < height; row++) {
+      const int bufY = rotatedY + row;
+      if (bufY < 0 || bufY >= HalDisplay::DISPLAY_HEIGHT) continue;
+      const int bufStart = bufY * HalDisplay::DISPLAY_WIDTH_BYTES + (rotatedX / 8);
+      for (int b = 0; b < widthBytes; b++) {
+        const int idx = bufStart + b;
+        if (idx >= 0 && idx < HalDisplay::BUFFER_SIZE) {
+          frameBuffer[idx] = ~frameBuffer[idx];
+        }
+      }
+    }
+  }
 }
 
 void GfxRenderer::drawIcon(const uint8_t bitmap[], const int x, const int y, const int width, const int height) const {
-  display.drawImageTransparent(bitmap, y, getScreenWidth() - width - x, height, width);
+  // drawImageTransparent uses AND to stamp black pixels onto framebuffer.
+  // In dark mode the background is 0x00 (black), so AND produces nothing.
+  // Strategy: in dark mode, pre-fill icon region with white, draw the icon
+  // (AND clears the black pixels), then invert the whole region so that
+  // black bg + white icon pixels become correct dark-mode appearance.
+  const int phyX = y;
+  const int phyY = getScreenWidth() - width - x;
+
+  if (darkMode && renderMode == BW) {
+    // Pre-fill icon area with white (0xFF) so AND can work
+    const int widthBytes = height / 8;  // physical: height pixels wide
+    for (int row = 0; row < width; row++) {  // physical: width pixels tall
+      const int bufY = phyY + row;
+      if (bufY < 0 || bufY >= HalDisplay::DISPLAY_HEIGHT) continue;
+      const int bufStart = bufY * HalDisplay::DISPLAY_WIDTH_BYTES + (phyX / 8);
+      for (int b = 0; b < widthBytes; b++) {
+        const int idx = bufStart + b;
+        if (idx >= 0 && idx < HalDisplay::BUFFER_SIZE) {
+          frameBuffer[idx] = 0xFF;
+        }
+      }
+    }
+  }
+
+  display.drawImageTransparent(bitmap, phyX, phyY, height, width);
+
+  if (darkMode && renderMode == BW) {
+    // Invert the drawn region so icon adapts to dark background
+    const int widthBytes = height / 8;
+    for (int row = 0; row < width; row++) {
+      const int bufY = phyY + row;
+      if (bufY < 0 || bufY >= HalDisplay::DISPLAY_HEIGHT) continue;
+      const int bufStart = bufY * HalDisplay::DISPLAY_WIDTH_BYTES + (phyX / 8);
+      for (int b = 0; b < widthBytes; b++) {
+        const int idx = bufStart + b;
+        if (idx >= 0 && idx < HalDisplay::BUFFER_SIZE) {
+          frameBuffer[idx] = ~frameBuffer[idx];
+        }
+      }
+    }
+  }
 }
 
 void GfxRenderer::drawBitmap(const Bitmap& bitmap, const int x, const int y, const int maxWidth, const int maxHeight,
@@ -1052,6 +1109,14 @@ void GfxRenderer::drawBitmap1Bit(const Bitmap& bitmap, const int x, const int y,
   if (maxHeight > 0 && bitmap.getHeight() > maxHeight) {
     scale = std::min(scale, static_cast<float>(maxHeight) / static_cast<float>(bitmap.getHeight()));
     isScaled = true;
+  }
+
+  // In dark mode, pre-fill image area with white since white pixels are
+  // not explicitly drawn (they rely on clearScreen background).
+  if (darkMode && renderMode == BW) {
+    const int displayWidth = isScaled ? static_cast<int>(std::floor(bitmap.getWidth() * scale)) : bitmap.getWidth();
+    const int displayHeight = isScaled ? static_cast<int>(std::floor(bitmap.getHeight() * scale)) : bitmap.getHeight();
+    fillRect(x, y, displayWidth, displayHeight, false);
   }
 
   // For 1-bit BMP, output is still 2-bit packed (for consistency with readNextRow)
@@ -1184,7 +1249,9 @@ static unsigned long start_ms = 0;
 
 void GfxRenderer::clearScreen(const uint8_t color) const {
   start_ms = millis();
-  display.clearScreen(color);
+  // Dark mode: invert the default white (0xFF) background to black (0x00).
+  // Grayscale prep passes clearScreen(0x00) and is not affected.
+  display.clearScreen((darkMode && color == 0xFF) ? 0x00 : color);
 }
 
 void GfxRenderer::invertScreen() const {

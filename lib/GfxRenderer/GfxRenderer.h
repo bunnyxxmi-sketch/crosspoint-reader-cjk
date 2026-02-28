@@ -47,6 +47,8 @@ class GfxRenderer {
   FontDecompressor* fontDecompressor = nullptr;
   // Dark mode: true = black background, false = white background
   bool darkMode = false;
+  // Whether to invert images in dark mode (user preference)
+  bool invertImagesInDarkMode = false;
   // Extra spacing (in pixels) for ASCII letters/digits when using external reader font.
   int8_t asciiLetterSpacing = 0;
   int8_t asciiDigitSpacing = 0;
@@ -105,6 +107,14 @@ class GfxRenderer {
   // Dark mode control
   void setDarkMode(bool darkMode) { this->darkMode = darkMode; }
   bool isDarkMode() const { return darkMode; }
+  // When true, images are inverted along with text in dark mode.
+  // When false (default), image rendering skips dark mode inversion.
+  void setInvertImagesInDarkMode(bool invert) { invertImagesInDarkMode = invert; }
+  bool shouldInvertImagesInDarkMode() const { return invertImagesInDarkMode; }
+  // Called by image rendering code to skip dark mode pixel inversion.
+  // Must be paired: beginImageRender() ... endImageRender().
+  void beginImageRender() const { skipDarkModeForImages = true; }
+  void endImageRender() const { skipDarkModeForImages = false; }
   void setAsciiLetterSpacing(int8_t spacing) { asciiLetterSpacing = spacing; }
   void setAsciiDigitSpacing(int8_t spacing) { asciiDigitSpacing = spacing; }
   void setCjkSpacing(int8_t spacing) { cjkSpacing = spacing; }

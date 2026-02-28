@@ -331,6 +331,7 @@ void setup() {
 
   // CJK: Dark mode
   renderer.setDarkMode(SETTINGS.colorMode == CrossPointSettings::COLOR_MODE::DARK_MODE);
+  renderer.setInvertImagesInDarkMode(SETTINGS.invertImages);
 
   switch (gpio.getWakeupReason()) {
     case HalGPIO::WakeupReason::PowerButton:

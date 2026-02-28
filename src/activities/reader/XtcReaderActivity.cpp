@@ -154,6 +154,11 @@ void XtcReaderActivity::render(Activity::RenderLock&&) {
 }
 
 void XtcReaderActivity::renderPage() {
+  // XTC pages are pre-rendered images; disable dark mode to preserve
+  // original appearance (clearScreen fills white, pixels not inverted).
+  const bool wasDarkMode = renderer.isDarkMode();
+  renderer.setDarkMode(false);
+
   const uint16_t pageWidth = xtc->getPageWidth();
   const uint16_t pageHeight = xtc->getPageHeight();
   const uint8_t bitDepth = xtc->getBitDepth();
@@ -295,6 +300,7 @@ void XtcReaderActivity::renderPage() {
     free(pageBuffer);
 
     LOG_DBG("XTR", "Rendered page %lu/%lu (2-bit grayscale)", currentPage + 1, xtc->getPageCount());
+    renderer.setDarkMode(wasDarkMode);
     return;
   } else {
     // 1-bit mode: 8 pixels per byte, MSB first
@@ -331,6 +337,7 @@ void XtcReaderActivity::renderPage() {
   }
 
   LOG_DBG("XTR", "Rendered page %lu/%lu (%u-bit)", currentPage + 1, xtc->getPageCount(), bitDepth);
+  renderer.setDarkMode(wasDarkMode);
 }
 
 void XtcReaderActivity::saveProgress() const {

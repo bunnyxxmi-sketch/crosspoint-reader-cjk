@@ -208,6 +208,8 @@ class CrossPointSettings {
   uint8_t uiOrientation = UI_PORTRAIT;
   // First line indent for paragraphs
   uint8_t firstLineIndent = 0;
+  // Invert images in dark mode (1 = invert, 0 = keep original)
+  uint8_t invertImages = 0;
   // Color mode (light/dark) for reader
   uint8_t colorMode = LIGHT_MODE;
 

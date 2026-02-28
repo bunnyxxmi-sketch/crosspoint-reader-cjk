@@ -125,6 +125,10 @@ bool JsonSettingsIO::saveSettings(const CrossPointSettings& s, const char* path)
   doc["uiTheme"] = s.uiTheme;
   doc["fadingFix"] = s.fadingFix;
   doc["embeddedStyle"] = s.embeddedStyle;
+  doc["uiOrientation"] = s.uiOrientation;
+  doc["firstLineIndent"] = s.firstLineIndent;
+  doc["invertImages"] = s.invertImages;
+  doc["colorMode"] = s.colorMode;
   doc["statusBarChapterPageCount"] = s.statusBarChapterPageCount;
   doc["statusBarBookProgressPercentage"] = s.statusBarBookProgressPercentage;
   doc["statusBarProgressBar"] = s.statusBarProgressBar;
@@ -186,6 +190,10 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
   s.uiTheme = doc["uiTheme"] | (uint8_t)S::LYRA;
   s.fadingFix = doc["fadingFix"] | (uint8_t)0;
   s.embeddedStyle = doc["embeddedStyle"] | (uint8_t)1;
+  s.uiOrientation = clamp(doc["uiOrientation"] | (uint8_t)S::UI_PORTRAIT, (uint8_t)2, S::UI_PORTRAIT);
+  s.firstLineIndent = (doc["firstLineIndent"] | (uint8_t)0) ? 1 : 0;
+  s.invertImages = (doc["invertImages"] | (uint8_t)0) ? 1 : 0;
+  s.colorMode = clamp(doc["colorMode"] | (uint8_t)S::LIGHT_MODE, (uint8_t)2, S::LIGHT_MODE);
 
   const char* url = doc["opdsServerUrl"] | "";
   strncpy(s.opdsServerUrl, url, sizeof(s.opdsServerUrl) - 1);

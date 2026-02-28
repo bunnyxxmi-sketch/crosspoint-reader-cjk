@@ -11,8 +11,8 @@
 // Shared settings list used by both the device settings UI and the web settings API.
 // Each entry has a key (for JSON API) and category (for grouping).
 // ACTION-type entries and entries without a key are device-only.
-inline std::vector<SettingInfo> getSettingsList() {
-  return {
+inline const std::vector<SettingInfo>& getSettingsList() {
+  static const std::vector<SettingInfo> settings = {
       // --- Display ---
       SettingInfo::Enum(StrId::STR_SLEEP_SCREEN, &CrossPointSettings::sleepScreen,
                         {StrId::STR_DARK, StrId::STR_LIGHT, StrId::STR_CUSTOM, StrId::STR_COVER, StrId::STR_NONE_OPT,
@@ -67,6 +67,8 @@ inline std::vector<SettingInfo> getSettingsList() {
       SettingInfo::Toggle(StrId::STR_TEXT_AA, &CrossPointSettings::textAntiAliasing, "textAntiAliasing",
                           StrId::STR_CAT_READER),
       SettingInfo::Toggle(StrId::STR_FIRST_LINE_INDENT, &CrossPointSettings::firstLineIndent, "firstLineIndent",
+                          StrId::STR_CAT_READER),
+      SettingInfo::Toggle(StrId::STR_INVERT_IMAGES, &CrossPointSettings::invertImages, "invertImages",
                           StrId::STR_CAT_READER),
 
       // --- Controls ---
@@ -138,4 +140,6 @@ inline std::vector<SettingInfo> getSettingsList() {
       SettingInfo::Toggle(StrId::STR_BATTERY, &CrossPointSettings::statusBarBattery, "statusBarBattery",
                           StrId::STR_CUSTOMISE_STATUS_BAR),
   };
+
+  return settings;
 }
