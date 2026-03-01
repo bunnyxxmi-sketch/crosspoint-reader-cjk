@@ -15,6 +15,11 @@ class EpubReaderMenuActivity final : public ActivityWithSubactivity {
   enum class MenuAction {
     SELECT_CHAPTER,
     READER_SETTINGS,
+    STYLE_FIRST_LINE_INDENT,
+    STYLE_FONT_FAMILY,
+    STYLE_LINE_SPACING,
+    STYLE_INVERT_IMAGES,
+    STYLE_STATUS_BAR,
     GO_TO_PERCENT,
     ROTATE_SCREEN,
     SCREENSHOT,
@@ -51,6 +56,11 @@ class EpubReaderMenuActivity final : public ActivityWithSubactivity {
   // Fixed menu layout (order matters for up/down navigation).
   const std::vector<MenuItem> menuItems = {{MenuAction::SELECT_CHAPTER, StrId::STR_SELECT_CHAPTER},
                                            {MenuAction::READER_SETTINGS, StrId::STR_SETTINGS_TITLE},
+                                           {MenuAction::STYLE_FIRST_LINE_INDENT, StrId::STR_FIRST_LINE_INDENT},
+                                           {MenuAction::STYLE_FONT_FAMILY, StrId::STR_FONT_FAMILY},
+                                           {MenuAction::STYLE_LINE_SPACING, StrId::STR_LINE_SPACING},
+                                           {MenuAction::STYLE_INVERT_IMAGES, StrId::STR_INVERT_IMAGES},
+                                           {MenuAction::STYLE_STATUS_BAR, StrId::STR_CUSTOMISE_STATUS_BAR},
                                            {MenuAction::ROTATE_SCREEN, StrId::STR_ORIENTATION},
                                            {MenuAction::GO_TO_PERCENT, StrId::STR_GO_TO_PERCENT},
                                            {MenuAction::SCREENSHOT, StrId::STR_SCREENSHOT_BUTTON},
@@ -68,6 +78,10 @@ class EpubReaderMenuActivity final : public ActivityWithSubactivity {
   int currentPage = 0;
   int totalPages = 0;
   int bookProgressPercent = 0;
+  bool skipNextButtonCheck = true;
+
+  std::string getMenuItemValue(MenuAction action) const;
+  std::string getCurrentFontLabel() const;
 
   const std::function<void(uint8_t)> onBack;
   const std::function<void(MenuAction)> onAction;

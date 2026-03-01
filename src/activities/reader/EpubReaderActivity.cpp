@@ -19,7 +19,10 @@
 #include "OrientationHelper.h"
 #include "QrDisplayActivity.h"
 #include "RecentBooksStore.h"
+#include "activities/settings/FontSelectActivity.h"
+#include "activities/settings/LineSpacingSelectionActivity.h"
 #include "activities/settings/SettingsActivity.h"
+#include "activities/settings/StatusBarSettingsActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "util/ScreenshotUtil.h"
@@ -332,6 +335,16 @@ void EpubReaderActivity::jumpToPercent(int percent) {
   }
 }
 
+void EpubReaderActivity::invalidateSectionPreservingPosition() {
+  RenderLock lock(*this);
+  if (section) {
+    cachedSpineIndex = currentSpineIndex;
+    cachedChapterTotalPageCount = section->pageCount;
+    nextPageNumber = section->currentPage;
+    section.reset();
+  }
+}
+
 void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action) {
   switch (action) {
     case EpubReaderMenuActivity::MenuAction::SELECT_CHAPTER: {
@@ -348,8 +361,30 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       enterNewActivity(new EpubReaderChapterSelectionActivity(
           this->renderer, this->mappedInput, epub, path, spineIdx, currentP, totalP,
           [this] {
+            int menuSpineIndex = 0;
+            int menuCurrentPage = 0;
+            int menuTotalPages = 0;
+            {
+              RenderLock lock(*this);
+              menuSpineIndex = currentSpineIndex;
+              if (section) {
+                menuCurrentPage = section->currentPage + 1;
+                menuTotalPages = section->pageCount;
+              }
+            }
+
+            float bookProgress = 0.0f;
+            if (epub && epub->getBookSize() > 0 && menuTotalPages > 0) {
+              const float chapterProgress = static_cast<float>(menuCurrentPage - 1) / static_cast<float>(menuTotalPages);
+              bookProgress = epub->calculateProgress(menuSpineIndex, chapterProgress) * 100.0f;
+            }
+            const int bookProgressPercent = clampPercent(static_cast<int>(bookProgress + 0.5f));
+
             exitActivity();
-            requestUpdate();
+            enterNewActivity(new EpubReaderMenuActivity(
+                renderer, mappedInput, epub->getTitle(), menuCurrentPage, menuTotalPages, bookProgressPercent,
+                SETTINGS.orientation, [this](const uint8_t orientation) { onReaderMenuBack(orientation); },
+                [this](EpubReaderMenuActivity::MenuAction action) { onReaderMenuConfirm(action); }));
           },
           [this](const int newSpineIndex) {
             if (currentSpineIndex != newSpineIndex) {
@@ -404,20 +439,132 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
           [this] {
             exitActivity();
             // Reader settings (font/line spacing/margins etc.) may change pagination.
-            // Force section re-layout and preserve approximate reading position.
-            {
-              RenderLock lock(*this);
-              if (section) {
-                cachedSpineIndex = currentSpineIndex;
-                cachedChapterTotalPageCount = section->pageCount;
-                nextPageNumber = section->currentPage;
-                section.reset();
-              }
-            }
+            invalidateSectionPreservingPosition();
             skipNextButtonCheck = true;
             requestUpdate();
           },
           1, 1));
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::STYLE_FIRST_LINE_INDENT: {
+      SETTINGS.firstLineIndent = !SETTINGS.firstLineIndent;
+      SETTINGS.saveToFile();
+      invalidateSectionPreservingPosition();
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::STYLE_INVERT_IMAGES: {
+      SETTINGS.invertImages = !SETTINGS.invertImages;
+      SETTINGS.saveToFile();
+      renderer.setInvertImagesInDarkMode(SETTINGS.invertImages);
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::STYLE_FONT_FAMILY: {
+      exitActivity();
+      enterNewActivity(new FontSelectActivity(renderer, mappedInput, FontSelectActivity::SelectMode::Reader,
+                                              [this] {
+                                                int menuSpineIndex = 0;
+                                                int menuCurrentPage = 0;
+                                                int menuTotalPages = 0;
+                                                {
+                                                  RenderLock lock(*this);
+                                                  menuSpineIndex = currentSpineIndex;
+                                                  if (section) {
+                                                    menuCurrentPage = section->currentPage + 1;
+                                                    menuTotalPages = section->pageCount;
+                                                  }
+                                                }
+
+                                                float bookProgress = 0.0f;
+                                                if (epub && epub->getBookSize() > 0 && menuTotalPages > 0) {
+                                                  const float chapterProgress =
+                                                      static_cast<float>(menuCurrentPage - 1) /
+                                                      static_cast<float>(menuTotalPages);
+                                                  bookProgress =
+                                                      epub->calculateProgress(menuSpineIndex, chapterProgress) * 100.0f;
+                                                }
+                                                const int bookProgressPercent =
+                                                    clampPercent(static_cast<int>(bookProgress + 0.5f));
+
+                                                exitActivity();
+                                                invalidateSectionPreservingPosition();
+                                                enterNewActivity(new EpubReaderMenuActivity(
+                                                    renderer, mappedInput, epub->getTitle(), menuCurrentPage,
+                                                    menuTotalPages, bookProgressPercent, SETTINGS.orientation,
+                                                    [this](const uint8_t orientation) { onReaderMenuBack(orientation); },
+                                                    [this](EpubReaderMenuActivity::MenuAction action) {
+                                                      onReaderMenuConfirm(action);
+                                                    }));
+                                              }));
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::STYLE_LINE_SPACING: {
+      exitActivity();
+      enterNewActivity(new LineSpacingSelectionActivity(
+          renderer, mappedInput, static_cast<int>(SETTINGS.lineSpacing),
+          [this](const int selectedValue) {
+            int menuSpineIndex = 0;
+            int menuCurrentPage = 0;
+            int menuTotalPages = 0;
+            {
+              RenderLock lock(*this);
+              menuSpineIndex = currentSpineIndex;
+              if (section) {
+                menuCurrentPage = section->currentPage + 1;
+                menuTotalPages = section->pageCount;
+              }
+            }
+
+            float bookProgress = 0.0f;
+            if (epub && epub->getBookSize() > 0 && menuTotalPages > 0) {
+              const float chapterProgress = static_cast<float>(menuCurrentPage - 1) / static_cast<float>(menuTotalPages);
+              bookProgress = epub->calculateProgress(menuSpineIndex, chapterProgress) * 100.0f;
+            }
+            const int bookProgressPercent = clampPercent(static_cast<int>(bookProgress + 0.5f));
+
+            SETTINGS.lineSpacing = static_cast<uint8_t>(selectedValue);
+            SETTINGS.saveToFile();
+            exitActivity();
+            invalidateSectionPreservingPosition();
+            enterNewActivity(new EpubReaderMenuActivity(
+                renderer, mappedInput, epub->getTitle(), menuCurrentPage, menuTotalPages, bookProgressPercent,
+                SETTINGS.orientation, [this](const uint8_t orientation) { onReaderMenuBack(orientation); },
+                [this](EpubReaderMenuActivity::MenuAction action) { onReaderMenuConfirm(action); }));
+          },
+          [this] {
+            int menuSpineIndex = 0;
+            int menuCurrentPage = 0;
+            int menuTotalPages = 0;
+            {
+              RenderLock lock(*this);
+              menuSpineIndex = currentSpineIndex;
+              if (section) {
+                menuCurrentPage = section->currentPage + 1;
+                menuTotalPages = section->pageCount;
+              }
+            }
+
+            float bookProgress = 0.0f;
+            if (epub && epub->getBookSize() > 0 && menuTotalPages > 0) {
+              const float chapterProgress = static_cast<float>(menuCurrentPage - 1) / static_cast<float>(menuTotalPages);
+              bookProgress = epub->calculateProgress(menuSpineIndex, chapterProgress) * 100.0f;
+            }
+            const int bookProgressPercent = clampPercent(static_cast<int>(bookProgress + 0.5f));
+
+            exitActivity();
+            enterNewActivity(new EpubReaderMenuActivity(
+                renderer, mappedInput, epub->getTitle(), menuCurrentPage, menuTotalPages, bookProgressPercent,
+                SETTINGS.orientation, [this](const uint8_t orientation) { onReaderMenuBack(orientation); },
+                [this](EpubReaderMenuActivity::MenuAction action) { onReaderMenuConfirm(action); }));
+          }));
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::STYLE_STATUS_BAR: {
+      exitActivity();
+      enterNewActivity(new StatusBarSettingsActivity(renderer, mappedInput, [this] {
+        exitActivity();
+        skipNextButtonCheck = true;
+        requestUpdate();
+      }));
       break;
     }
     case EpubReaderMenuActivity::MenuAction::DISPLAY_QR: {
