@@ -16,15 +16,19 @@
 
 namespace {
 void syncTimeWithNTP() {
+  // Stop SNTP if already running (can't reconfigure while running)
   if (esp_sntp_enabled()) {
     esp_sntp_stop();
   }
+
+  // Configure SNTP
   esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
   esp_sntp_setservername(0, "pool.ntp.org");
   esp_sntp_init();
 
+  // Wait for time to sync (with timeout)
   int retry = 0;
-  const int maxRetries = 50;
+  const int maxRetries = 50;  // 5 seconds max
   while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED && retry < maxRetries) {
     vTaskDelay(100 / portTICK_PERIOD_MS);
     retry++;
@@ -65,6 +69,7 @@ void KOReaderSyncActivity::onWifiSelectionComplete(const bool success) {
   }
   requestUpdate();
 
+  // Sync time with NTP before making API requests
   syncTimeWithNTP();
 
   {
@@ -77,6 +82,7 @@ void KOReaderSyncActivity::onWifiSelectionComplete(const bool success) {
 }
 
 void KOReaderSyncActivity::performSync() {
+  // Calculate document hash based on user's preferred method
   if (KOREADER_STORE.getMatchMethod() == DocumentMatchMethod::FILENAME) {
     documentHash = KOReaderDocumentId::calculateFromFilename(epubPath);
   } else {
@@ -100,9 +106,11 @@ void KOReaderSyncActivity::performSync() {
   }
   requestUpdateAndWait();
 
+  // Fetch remote progress
   const auto result = KOReaderSyncClient::getProgress(documentHash, remoteProgress);
 
   if (result == KOReaderSyncClient::NOT_FOUND) {
+    // No remote progress - offer to upload
     {
       RenderLock lock(*this);
       state = NO_REMOTE_PROGRESS;
@@ -122,10 +130,12 @@ void KOReaderSyncActivity::performSync() {
     return;
   }
 
+  // Convert remote progress to CrossPoint position
   hasRemoteProgress = true;
   KOReaderPosition koPos = {remoteProgress.progress, remoteProgress.percentage};
   remotePosition = ProgressMapper::toCrossPoint(epub, koPos, currentSpineIndex, totalPagesInSpine);
 
+  // Calculate local progress in KOReader format (for display)
   CrossPointPosition localPos = {currentSpineIndex, currentPage, totalPagesInSpine};
   localProgress = ProgressMapper::toKOReader(epub, localPos);
 
@@ -133,10 +143,11 @@ void KOReaderSyncActivity::performSync() {
     RenderLock lock(*this);
     state = SHOWING_RESULT;
 
+    // Default to the option that corresponds to the furthest progress
     if (localProgress.percentage > remoteProgress.percentage) {
-      selectedOption = 1;
+      selectedOption = 1;  // Upload local progress
     } else {
-      selectedOption = 0;
+      selectedOption = 0;  // Apply remote progress
     }
   }
   requestUpdate();
@@ -151,6 +162,7 @@ void KOReaderSyncActivity::performUpload() {
   requestUpdate();
   requestUpdateAndWait();
 
+  // Convert current position to KOReader format
   CrossPointPosition localPos = {currentSpineIndex, currentPage, totalPagesInSpine};
   KOReaderPosition koPos = ProgressMapper::toKOReader(epub, localPos);
 
@@ -210,9 +222,11 @@ void KOReaderSyncActivity::onEnter() {
     statusMessage = tr(STR_SYNCING_TIME);
     requestUpdate();
 
+    // Perform sync directly (will be handled in loop)
     xTaskCreate(
         [](void* param) {
           auto* self = static_cast<KOReaderSyncActivity*>(param);
+          // Sync time first
           syncTimeWithNTP();
           {
             RenderLock lock(*self);
@@ -283,8 +297,10 @@ void KOReaderSyncActivity::render(Activity::RenderLock&&) {
   }
 
   if (state == SHOWING_RESULT) {
+    // Show comparison
     renderer.drawCenteredText(UI_10_FONT_ID, 120, tr(STR_PROGRESS_FOUND), true, EpdFontFamily::BOLD);
 
+    // Get chapter names from TOC
     const int remoteTocIndex = epub->getTocIndexForSpineIndex(remotePosition.spineIndex);
     const int localTocIndex = epub->getTocIndexForSpineIndex(currentSpineIndex);
     const std::string remoteChapter =
@@ -294,6 +310,7 @@ void KOReaderSyncActivity::render(Activity::RenderLock&&) {
         (localTocIndex >= 0) ? epub->getTocItem(localTocIndex).title
                              : (std::string(tr(STR_SECTION_PREFIX)) + std::to_string(currentSpineIndex + 1));
 
+    // Remote progress - chapter and page
     renderer.drawText(UI_10_FONT_ID, 20, 160, tr(STR_REMOTE_LABEL), true);
     char remoteChapterStr[128];
     snprintf(remoteChapterStr, sizeof(remoteChapterStr), "  %s", remoteChapter.c_str());
@@ -309,6 +326,7 @@ void KOReaderSyncActivity::render(Activity::RenderLock&&) {
       renderer.drawText(UI_10_FONT_ID, 20, 235, deviceStr);
     }
 
+    // Local progress - chapter and page
     renderer.drawText(UI_10_FONT_ID, 20, 270, tr(STR_LOCAL_LABEL), true);
     char localChapterStr[128];
     snprintf(localChapterStr, sizeof(localChapterStr), "  %s", localChapter.c_str());
@@ -321,16 +339,19 @@ void KOReaderSyncActivity::render(Activity::RenderLock&&) {
     const int optionY = 350;
     const int optionHeight = 30;
 
+    // Apply option
     if (selectedOption == 0) {
       renderer.fillRect(0, optionY - 2, pageWidth - 1, optionHeight);
     }
     renderer.drawText(UI_10_FONT_ID, 20, optionY, tr(STR_APPLY_REMOTE), selectedOption != 0);
 
+    // Upload option
     if (selectedOption == 1) {
       renderer.fillRect(0, optionY + optionHeight - 2, pageWidth - 1, optionHeight);
     }
     renderer.drawText(UI_10_FONT_ID, 20, optionY + optionHeight, tr(STR_UPLOAD_LOCAL), selectedOption != 1);
 
+    // Bottom button hints
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     renderer.displayBuffer();
@@ -381,21 +402,24 @@ void KOReaderSyncActivity::loop() {
   }
 
   if (state == SHOWING_RESULT) {
+    // Navigate options
     if (mappedInput.wasPressed(MappedInputManager::Button::Up) ||
         mappedInput.wasPressed(MappedInputManager::Button::Left)) {
-      selectedOption = (selectedOption + 1) % 2;
+      selectedOption = (selectedOption + 1) % 2;  // Wrap around among 2 options
       requestUpdate();
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Down) ||
                mappedInput.wasPressed(MappedInputManager::Button::Right)) {
-      selectedOption = (selectedOption + 1) % 2;
+      selectedOption = (selectedOption + 1) % 2;  // Wrap around among 2 options
       requestUpdate();
     }
 
     if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
       if (selectedOption == 0) {
+        // Apply remote progress — WiFi no longer needed
         wifiOff();
         onSyncComplete(remotePosition.spineIndex, remotePosition.pageNumber);
       } else if (selectedOption == 1) {
+        // Upload local progress
         performUpload();
       }
     }
@@ -408,6 +432,7 @@ void KOReaderSyncActivity::loop() {
 
   if (state == NO_REMOTE_PROGRESS) {
     if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+      // Calculate hash if not done yet
       if (documentHash.empty()) {
         if (KOREADER_STORE.getMatchMethod() == DocumentMatchMethod::FILENAME) {
           documentHash = KOReaderDocumentId::calculateFromFilename(epubPath);
