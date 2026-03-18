@@ -8,6 +8,16 @@
 #include "ProgressMapper.h"
 #include "activities/ActivityWithSubactivity.h"
 
+/**
+ * Activity for syncing reading progress with KOReader sync server.
+ *
+ * Flow:
+ * 1. Connect to WiFi (if not connected)
+ * 2. Calculate document hash
+ * 3. Fetch remote progress
+ * 4. Show comparison and options (Apply/Upload)
+ * 5. Apply or upload progress
+ */
 class KOReaderSyncActivity final : public ActivityWithSubactivity {
  public:
   using OnCancelCallback = std::function<void()>;
@@ -59,11 +69,15 @@ class KOReaderSyncActivity final : public ActivityWithSubactivity {
   std::string statusMessage;
   std::string documentHash;
 
+  // Remote progress data
   bool hasRemoteProgress = false;
   KOReaderProgress remoteProgress;
   CrossPointPosition remotePosition;
+
+  // Local progress as KOReader format (for display)
   KOReaderPosition localProgress;
 
+  // Selection in result screen (0=Apply, 1=Upload)
   int selectedOption = 0;
   bool freedFontCache = false;
 
