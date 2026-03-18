@@ -76,6 +76,7 @@ void KOReaderAuthActivity::onEnter() {
     statusMessage = tr(STR_AUTHENTICATING);
     requestUpdate();
 
+    // Perform authentication in a separate task
     xTaskCreate(
         [](void* param) {
           auto* self = static_cast<KOReaderAuthActivity*>(param);
