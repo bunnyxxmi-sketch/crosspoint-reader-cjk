@@ -4,6 +4,7 @@
 #include <I18n.h>
 #include <WiFi.h>
 
+#include "FontManager.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncClient.h"
 #include "MappedInputManager.h"
@@ -53,6 +54,19 @@ void KOReaderAuthActivity::performAuthentication() {
 void KOReaderAuthActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
 
+  // Free ALL external font caches to reclaim ~70KB heap for WiFi + TLS
+  renderer.clearFontCache();
+  auto& fm = FontManager::getInstance();
+  ExternalFont* rf = fm.getActiveFont();
+  ExternalFont* uf = fm.getActiveUiFont();
+  if (rf) {
+    rf->unload();
+    freedReaderFontCache = true;
+  }
+  if (uf && uf != rf) {
+    uf->unload();
+  }
+
   // Turn on WiFi
   WiFi.mode(WIFI_STA);
 
@@ -62,14 +76,13 @@ void KOReaderAuthActivity::onEnter() {
     statusMessage = tr(STR_AUTHENTICATING);
     requestUpdate();
 
-    // Perform authentication in a separate task
     xTaskCreate(
         [](void* param) {
           auto* self = static_cast<KOReaderAuthActivity*>(param);
           self->performAuthentication();
           vTaskDelete(nullptr);
         },
-        "AuthTask", 4096, this, 1, nullptr);
+        "AuthTask", 8192, this, 1, nullptr);
     return;
   }
 
@@ -86,6 +99,24 @@ void KOReaderAuthActivity::onExit() {
   delay(100);
   WiFi.mode(WIFI_OFF);
   delay(100);
+
+  // Reload only reader font (skip UI font to preserve heap for chapter loading)
+  if (freedReaderFontCache) {
+    auto& fm = FontManager::getInstance();
+    int rIdx = fm.getSelectedIndex();
+    if (rIdx >= 0 && rIdx < fm.getFontCount()) {
+      const FontInfo* info = fm.getFontInfo(rIdx);
+      if (info) {
+        char path[96];
+        snprintf(path, sizeof(path), "/fonts/%s", info->filename);
+        // getActiveFont() returns nullptr after unload since isLoaded()=false
+        // We need to access _activeFont directly - use selectFont with a trick
+        fm.selectFont(-1);   // clear index
+        fm.selectFont(rIdx); // triggers loadSelectedFont()
+      }
+    }
+    freedReaderFontCache = false;
+  }
 }
 
 void KOReaderAuthActivity::render(Activity::RenderLock&&) {

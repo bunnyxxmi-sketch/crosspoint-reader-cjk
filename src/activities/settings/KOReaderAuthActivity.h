@@ -26,6 +26,7 @@ class KOReaderAuthActivity final : public ActivityWithSubactivity {
   State state = WIFI_SELECTION;
   std::string statusMessage;
   std::string errorMessage;
+  bool freedReaderFontCache = false;
 
   const std::function<void()> onComplete;
 
